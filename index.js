@@ -20,7 +20,10 @@ app.use(express.urlencoded());
 // Set-up connection with DynamoDB database
 dynamo.AWS.config.update({accessKeyId: cfg.aws.access, secretAccessKey: cfg.aws.secret, region: cfg.aws.region});
 
-// Make sure DynamoDB tables are set up properly
+/*
+ Make sure DynamoDB tables are set up properly
+*/
+// Instructor table: Name, Public Key
 var Instructors = dynamo.define('Instructor', {
 	hashKey: 'name',
 	schema: {
@@ -29,7 +32,7 @@ var Instructors = dynamo.define('Instructor', {
 		secret: Joi.string()
 	}
 });
-
+// Feedback table: Instructor, createdAt, Comment
 var Feedback = dynamo.define('Feedback', {
 	hashKey: 'instructor',
 	rangeKey: 'createdAt',
@@ -39,7 +42,6 @@ var Feedback = dynamo.define('Feedback', {
 		comment: Joi.string()
 	}
 });
-
 // Create the tables if they haven't been yet
 dynamo.createTables(function(err){
 	if (err)
@@ -48,7 +50,9 @@ dynamo.createTables(function(err){
 		console.log('Tables created / loaded');
 });
 
-
+/*
+ Database util functions (Should be in different file, but this project is so small it really doesn't matter)
+*/
 // Get list of instructors function
 var get_instructors = function(callback) {
 	// So few instructors that the query structure of this code literally does not matter
@@ -179,8 +183,6 @@ app.post('/change_key', function(req, res) {
 			
 			// Save new key
 			console.log(error);
-			console.log(instructor);
-			console.log(npublic);
 			Instructors.update({name: instructor, public_key: npublic}, function(err, result){
 				if (err) {
 					console.log(err);

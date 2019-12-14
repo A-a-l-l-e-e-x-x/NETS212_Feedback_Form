@@ -55,14 +55,50 @@ dynamo.createTables(function(err){
 /*
  Util functions (Should be in different file, but this project is so small it really doesn't matter)
 */
+// Error building function
+var mkErr = function(status, type, message) {
+	return {status: status, type: type, error: message};
+};
 // Logging utility (Currently console - Should log to database in future)
 var log = function(type, message) { // Should log more than just a message...
 	console.log(`[${Date.now()}][${type}]${message}`);
 };
-// Get list of instructors function
-var get_instructors = function(callback) {
+// Get list of all instructors
+var get_instructors = () => {
 	// So few instructors that the query structure of this code literally does not matter
-	Instructors.scan().loadAll().exec(callback);
+	return new Promise((resolve, reject) => {
+		Instructors.scan().loadAll().exec(function(err, result){
+			if (err) {
+				reject(mkErr(500, cfg.logging.type.dberr, 'Couldn\'t load instructors: ' + err));
+				return;
+			}
+			resolve(result);
+		});
+	});
+};
+// Get single instructor, check secret match if private_key provided
+let get_instructor = (instructor, pk) => {
+	return new Promise((resolve, reject) => {
+		Instructors.get(instructor, function(err, instr) {
+			// Reject if DB fail
+			if (err) {
+				reject(mkErr(500, cfg.logging.type.dberr, `Error#6 querying instructors: ${err}`));
+				return;
+			}
+			// If no private key was provided, instantly resolve (no secret check)
+			if (! pk) {
+				resolve(instr);
+				return;
+			}
+			// Decrypt secret to see if private key is correct
+			const secret = decrypt_comment(instr.get('secret'), pk);
+			if(secret != cfg.user.secret) {
+				reject(mkErr(403, cfg.logging.type.input, `Error#101 wrong key specified`));
+				return;
+			}
+			resolve(instr);
+		});
+	});
 };
 // Decrypt comment
 var decrypt_comment = function(comment, private_key) {
@@ -93,7 +129,7 @@ var decrypted_comments = function(instructor_name, private_key) {
 		Feedback.query(instructor_name).loadAll().exec(function(err, fb){
 			// Query problem
 			if (err) {
-				reject({status: 500, type: cfg.logging.type.dberr, error: `Error#3 querying comments: ${err}`});
+				reject(mkErr(500, cfg.logging.type.dberr, `Error#3 querying comments: ${err}`));
 				return;
 			}
 			// Decrypt all comments
@@ -115,15 +151,16 @@ var decrypted_comments = function(instructor_name, private_key) {
 app.use(express.static('public'));
 
 // Get list of instructors
-app.get('/instructors', function(req, res) {
-	get_instructors(function(err, result) {
-		if(err) {
-			log(cfg.logging.type.dberr, `Error#5 querying instructors: ${err}`);
-			res.status(500).send({error: 'Backend error #5'});
-			return;
-		}
-		res.send(result.Items.map(item => item.get('name')));
-	});
+app.get('/instructors', async function(req, res) {
+	// Query all instructors
+	try {
+		const instructors = await get_instructors();
+		// Send back names only
+		res.send(instructors.Items.map(item => item.get('name')));
+	} catch (exception) {
+		// DB fail
+		res.status(exception.status).send();
+	}
 });
 
 // View page to select instructor and submit review
@@ -132,7 +169,7 @@ app.get('/', function(req, res) {
 });
 
 // Submit instructor feedback (Check length)
-app.post('/submit_feedback', function(req, res){
+app.post('/submit_feedback', async function(req, res){
 	// POST Parameters
 	const name = req.body.name;
 	const comment = req.body.comment;
@@ -143,27 +180,28 @@ app.post('/submit_feedback', function(req, res){
 		res.status(500).send({error: 'Comment not long enough.'});
 		return;
 	}
-	// Query the appropriate public key
-	Instructors.get(name, function(err, instr){
-		if (err) {
-			log(cfg.logging.type.dberr, `Error#1 querying instructors: ${err}`);
-			res.status(500).send();
-			return;
-		}
+	try {
+		// Query the appropriate instructor to get public key (No key match needed)
+		const instr = await get_instructor(name);
 		// Encode the comment with the given public key
 		var encrypted_comment = encrypt_comment(comment, instr.get('public_key'));
 		if(encrypted_comment == null)
 			encrypted_comment = 'Couldn\'t encrypt comment.';
 		// Store the comment in the database
-		Feedback.create({instructor: name, comment: encrypted_comment}, function(err, data){
-			if(err) {
-				log(cfg.logging.type.dberr, `Error#2 creating comment: ${err}`);
-				res.status(500).send();
-				return;
-			}
-			res.status(200).send();
+		await new Promise((resolve, reject) => {
+			Feedback.create({instructor: name, comment: encrypted_comment}, function(err, data){
+				if(err) {
+					reject(mkErr(500, cfg.logging.type.dberr, `Error#2 creating comment: ${err}`));
+					return;
+				}
+				resolve();
+			});
 		});
-	});
+		res.status(200).send();
+	} catch (exception) {
+		log(exception.type, exception.error);
+		res.status(exception.status).send();
+	}
 });
 
 // View page to identify as instructor and specify private key to view reviews 
@@ -172,28 +210,19 @@ app.get('/view_feedback', function(req, res) {
 });
 
 // Send back all reviews for given instructor decrypted with given key
-app.post('/query_feedback', function(req, res){
+app.post('/query_feedback', async function(req, res){
 	// Post parameters
 	const instructor = req.body.name;
 	const private_key = req.body.private_key;
 	
 	// Query the feedback the TA has received
-	Feedback.query(instructor).loadAll().exec(function(err, fb){
-		// Query problem
-		if (err) {
-			log(cfg.logging.type.dberr, `Error#3 querying comments: ${err}`);
-			res.status(500).send();
-			return;
-		}
-		// Map items to readable format TODO refactor here as well
-		res.status(200).send(fb.Items.map(item => {
-			// For each comment, decrypt using private key
-			var decrypted_comment = decrypt_comment(item.get('comment'), private_key);
-			if(decrypted_comment == null)
-				decrypted_comment = 'Provided key can\'t decrypt comment.';
-			return decrypted_comment;
-		}));
-	});
+	try {
+		var comments = await decrypted_comments(instructor, private_key);
+		res.status(200).send(comments.map(item => item.comment));
+	} catch (exception) {
+		log(exception.type, exception.error);
+		res.status(exception.status).send();
+	}
 });
 
 
@@ -208,23 +237,7 @@ app.post('/change_key', async function(req, res) {
 	// POST parameters
 	const instructor = req.body.name;
 	const post_private_key = req.body.private_key;
-	
-	// Query relevant instructor
-	let get_instr = (instructor, pk) => {
-		return new Promise((resolve, reject) => {
-			Instructors.get(instructor, function(err, instr) {
-				if (err) {
-					reject({status: 500, type: cfg.logging.type.dberr, error: `Error#6 querying instructors: ${err}`});
-				}
-				// Decrypt secret to see if private key is correct
-				const secret = decrypt_comment(instr.get('secret'), pk);
-				if(secret != cfg.user.secret) {
-					reject({status: 403, type: cfg.logging.type.input, error: `Error#101 wrong key specified`});
-				}
-				resolve(instr);
-			});
-		});
-	};
+
 	let gen_keys = () => {
 		return new Promise((resolve, reject) => {
 			// Generate new key
@@ -243,6 +256,7 @@ app.post('/change_key', async function(req, res) {
 				// Key generating failed?
 				if(err) {
 					reject({status: 500, type: cfg.logging.type.crypto, error: `Error#50 gen keys: ${error}`});
+					return;
 				}
 				resolve({public_key: npublic, private_key: nprivate});
 			});
@@ -252,7 +266,7 @@ app.post('/change_key', async function(req, res) {
 	try {
 		// Query the current instructor and check if secret is correct
 		log(cfg.logging.type.info, 'Querying appropriate instructor.');
-		const instr = await get_instr(instructor, post_private_key);
+		const instr = await get_instructor(instructor, post_private_key);
 		// Generate a new key pair
 		log(cfg.logging.type.info, 'Generating new key pair.');
 		const { public_key, private_key } = await gen_keys();
@@ -277,6 +291,7 @@ app.post('/change_key', async function(req, res) {
 				Feedback.update({instructor: instr.get('name'), createdAt: comment.createdAt, comment: comment.comment}, function(err, com){
 					if (err) {
 						reject({status: 500, type: cfg.logging.type.dberr, error: `Error#10 update comment: ${err}`});
+						return;
 					}
 					resolve();
 				});
@@ -289,11 +304,13 @@ app.post('/change_key', async function(req, res) {
 			// If secret didn't get encrypted properly, fail.
 			if (new_secret == null) {
 				reject({status: 500, type: cfg.logging.type.crypto, error: 'Could\'nt encode secret.'});
+				return;
 			}
 			// Actually update
 			Instructors.update({name: instr.get('name'), secret: new_secret, public_key: public_key}, function(err, i){
 				if (err) {
 					reject({status: 500, type: cfg.logging.type.dberr, error: `Error#11 update instr: ${err}`});
+					return;
 				}
 				resolve();
 			});
@@ -308,61 +325,6 @@ app.post('/change_key', async function(req, res) {
 		log(exception.type, exception.error);
 		res.status(exception.status).send();
 	}
-	
-	
-	/*Instructors.get(instructor, function(err, instr) {
-		if (err) {
-			log(cfg.logging.type.dberr, `Error#6 querying instructors: ${err}`);
-			res.status(500).send();
-			return;
-		}
-		if(public_key != instr.get('public_key')) {
-			log(cfg.logging.type.input, `Error#101 wrong key specified`);
-			res.status(403).send();
-			return;
-		}
-		// If key matches:
-		// Generate new key
-		// https://nodejs.org/api/crypto.html#crypto_crypto_generatekeypair_type_options_callback
-		crypto.generateKeyPair('rsa', {
-			modulusLength: 2048,
-			publicKeyEncoding: {
-				type: 'spki',
-				format: 'pem'
-			},
-			privateKeyEncoding: {
-				type: 'pkcs8',
-				format: 'pem',
-			}
-		}, (error, npublic, nprivate) => {
-			// Key generating failed?
-			if(error) {
-				log(cfg.logging.type.crypto, `Error#50 gen keys: ${error}`);
-				res.status(500).send();
-				return;
-			}
-			// Query all comments, decrypt them, encrypt them with new key, update.
-			Feedback.query(instructor).loadAll().exec(function(err, fb){
-				// Query problem
-				if (err) {
-					log(cfg.logging.type.dberr, `Error#3 querying comments: ${err}`);
-					res.status(500).send();
-					return;
-				}
-				
-			});
-			// Save new key
-			Instructors.update({name: instructor, public_key: npublic}, function(err, result){
-				if (err) {
-					console.log(err);
-					res.status(500).send({error: 'Backend error #7'});
-					return;
-				}
-				res.status(200).send({publick: npublic, privatek: nprivate});
-			});
-		});
-		
-	});*/
 });
 
 app.get('/s', function(req, res) {

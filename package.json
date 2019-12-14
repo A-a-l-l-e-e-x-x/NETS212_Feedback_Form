@@ -1,0 +1,18 @@
+{
+  "name": "nets212_ta_feedback",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Alexander Kempf",
+  "license": "MIT",
+  "dependencies": {
+    "dynamodb": "^1.2.1",
+    "express": "^4.17.1",
+    "express-load-config": "0.0.5",
+    "express-sanitize-escape": "^1.1.0",
+    "joi": "^14.3.1"
+  }
+}

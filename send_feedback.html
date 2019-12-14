@@ -1,0 +1,99 @@
+<!doctype html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>NETS 212 TA Feedback</title>
+	<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+	<script src="https://code.jquery.com/jquery-3.4.1.min.js" integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script>
+	<script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js" integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous"></script>
+	<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js" integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6" crossorigin="anonymous"></script>
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	<link rel="stylesheet" href="./styles.css">
+	<script>
+		
+		$(document).ready(function() {
+		
+			var alert_success = function(text) {
+				// Styling
+				$("#alert").removeClass("alert-danger").addClass("alert-success");
+				// Message
+				$("#alert").text(text);
+			};
+			var alert_error = function(text) {
+				// Styling
+				$("#alert").removeClass("alert-success").addClass("alert-danger");
+				// Message
+				$("#alert").text(text);
+			};
+		
+			// Load instructor names
+			$.get('/instructors', function(result){
+				// Append them as options
+				result.forEach(function(elem){
+					$("#instructors").append(new Option(elem, elem));
+				});
+				// Remove placeholder
+				$("option[value='loading']").remove();
+			});
+			
+			$("#submit").on('click', function() {
+				const feedback = $("#feedback").val();
+				const instructor = $("#instructors").val();
+				const MIN_LENGTH = 15;
+				if (feedback.length < MIN_LENGTH) {
+					alert_error(`Feedback needs to be ${MIN_LENGTH} characters minimum.`);
+					return;
+				}
+				$.post('/submit_feedback', {name: instructor, comment: feedback})
+					.done(function(result){
+						alert_success('Feedback successfully sent. Thank you!');
+					})
+					.fail(function(error){
+						alert_error('Problem sending feedback... Sorry!');
+					})	
+					.always(function() {
+						$('#feedback').val('');
+					});
+			});
+		});
+	</script>
+	
+</head>
+
+<body>
+<div class="container-fluid">
+<div class="row justify-content-md-center">
+	<div class="col col-lg-auto">
+		<h1>NETS 212 Instructor Feedback Form</h1>
+		<p>
+			All feedback is completely anonymous. <br/>
+			Only the instructor you specify is able to view their feedback (encrypted in database)
+		</p>
+	</div>
+</div>
+<div class="row justify-content-md-center">
+	<div id="alert" class="col col-md-auto alert" role="alert">
+	</div>
+</div>
+<div class="row justify-content-md-center">
+	<div class="col ">
+		<div class="form-group">
+			<label for="instructors">Choose an instructor to give feedback to</label>
+			<select class="form-control" id="instructors">
+				<option value="loading">Loading...</option>
+			</select>
+		</div>
+		<div class="form-group">
+			<label for="feedback">Feedback</label>
+			<textarea class="form-control" id="feedback" rows="3"></textarea>
+		</div>
+		<input type="submit" id="submit" class="btn btn-primary" value="Submit"/>	
+	</div>	
+</div>
+</div>
+</div>
+</body>
+
+
+</html>

@@ -1,0 +1,16 @@
+html, body {
+	height: 100%;
+	width: 100%;
+}
+
+.fdc {
+	flex-direction: column;
+}
+
+#alert {
+	
+}
+
+.template {
+	display: none;
+}

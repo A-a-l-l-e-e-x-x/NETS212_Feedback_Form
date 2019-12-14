@@ -37,9 +37,9 @@
 			});
 			
 			$("#submit").on('click', function() {
-				const public_key = $("#public_key").val();
+				const private_key = $("#private_key").val();
 				const instructor = $("#instructors").val();
-				$.post('/change_key', {name: instructor, public_key: public_key})
+				$.post('/change_key', {name: instructor, private_key: private_key})
 					.done(function(result){
 						alert_success('Key changed. Make sure to save it!');
 						$("#new_public_key").empty();
@@ -65,7 +65,7 @@
 	<div class="col col-lg-auto">
 		<h1>NETS 212 Instructor Feedback Form</h1>
 		<p>
-			Provide your current public key here to generate a new key pair. <br/>
+			Provide your current private key here to generate a new key pair. <br/>
 			Make sure to save the new pair -- You will need the private key to access all comments made from the moment you created the pair (older comments only available with old private key), and the public one if you want to change your key pair again.
 		</p>
 	</div>
@@ -83,8 +83,8 @@
 			</select>
 		</div>
 		<div class="form-group">
-			<label for="feedback">Current public key</label>
-			<textarea class="form-control" id="public_key" rows="4"></textarea>
+			<label for="feedback">Current private key</label>
+			<textarea class="form-control" id="private_key" rows="4"></textarea>
 		</div>
 		<div class="form-row">
 			<div class="form-group col-md-6">

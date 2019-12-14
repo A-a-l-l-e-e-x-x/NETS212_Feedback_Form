@@ -77,7 +77,7 @@ var get_instructors = () => {
 	});
 };
 // Get single instructor, check secret match if private_key provided
-let get_instructor = (instructor, pk) => {
+let get_instructor = (instructor, pk, use_pk) => {
 	return new Promise((resolve, reject) => {
 		Instructors.get(instructor, function(err, instr) {
 			// Reject if DB fail
@@ -86,7 +86,7 @@ let get_instructor = (instructor, pk) => {
 				return;
 			}
 			// If no private key was provided, instantly resolve (no secret check)
-			if (! pk) {
+			if (! use_pk) {
 				resolve(instr);
 				return;
 			}
@@ -266,7 +266,7 @@ app.post('/change_key', async function(req, res) {
 	try {
 		// Query the current instructor and check if secret is correct
 		log(cfg.logging.type.info, 'Querying appropriate instructor.');
-		const instr = await get_instructor(instructor, post_private_key);
+		const instr = await get_instructor(instructor, post_private_key, true);
 		// Generate a new key pair
 		log(cfg.logging.type.info, 'Generating new key pair.');
 		const { public_key, private_key } = await gen_keys();
@@ -326,8 +326,6 @@ app.post('/change_key', async function(req, res) {
 		res.status(exception.status).send();
 	}
 });
-
-
 
 app.listen(cfg.app.port, function () {
   console.log("Server started.");

@@ -14,6 +14,8 @@ var crypto = require("crypto");
 var path = require("path");
 var cfg = require('./config/constants');
 
+// TODO: Use input-sanitizing middleware
+
 // Use JSON post parameters
 app.use(express.urlencoded());
 
@@ -29,7 +31,7 @@ var Instructors = dynamo.define('Instructor', {
 	schema: {
 		name: Joi.string(),
 		public_key: Joi.string(),
-		secret: Joi.string()
+		secret: Joi.string() // Currently unused
 	}
 });
 // Feedback table: Instructor, createdAt, Comment
@@ -51,24 +53,29 @@ dynamo.createTables(function(err){
 });
 
 /*
- Database util functions (Should be in different file, but this project is so small it really doesn't matter)
+ Util functions (Should be in different file, but this project is so small it really doesn't matter)
 */
+// Logging utility (Currently console - Should log to database in future)
+var log = function(type, message) { // Should log more than just a message...
+	console.log(`[${Date.now()}][${type}]${message}`);
+}
 // Get list of instructors function
 var get_instructors = function(callback) {
 	// So few instructors that the query structure of this code literally does not matter
 	Instructors.scan().loadAll().exec(callback);
 }
 
+/*
+ Route serving
+*/
 // Make resources public
 app.use(express.static('public'));
 
-/*
- Routes
-*/
 // Get list of instructors
 app.get('/instructors', function(req, res) {
 	get_instructors(function(err, result) {
 		if(err) {
+			log('DATABASE_ERROR', `Error#5 querying instructors: ${err}`);
 			res.status(500).send({error: 'Backend error #5'});
 			return;
 		}
@@ -88,20 +95,26 @@ app.post('/submit_feedback', function(req, res){
 	// Verify comment length
 	if(comment.length < 15) {
 		// TODO: Change appropriate error code
+		log('INPUT_ERROR', 'Error#100: Input comment not long enough.');
 		res.status(500).send({error: 'Comment not long enough.'});
 		return;
 	}
 	// Query the appropriate public key
 	Instructors.get(name, function(err, instr){
 		if (err) {
-			console.log(err);
+			log('DATABASE_ERROR', `Error#1 querying instructors: ${err}`);
 			res.status(500).send({error: 'Backend error #1'});
 			return;
 		}
 		// Encode the comment with the given public key
 		const public_key_string = instr.get('public_key');
 		const buffer = Buffer.from(comment);
-		const encrypted_comment = crypto.publicEncrypt(public_key_string, buffer).toString("base64");
+		const encrypted_comment = 'Could not encrypt.';
+		try {
+			encrypted_comment = crypto.publicEncrypt(public_key_string, buffer).toString("base64");
+		} catch (exception) {
+			log('CRYPTO', `Could not encrypt comment: ${exception}`);
+		}
 		// Store the comment in the database
 		Feedback.create({instructor: name, comment: encrypted_comment}, function(err, data){
 			if(err) {

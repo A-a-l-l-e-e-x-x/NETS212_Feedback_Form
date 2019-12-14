@@ -327,22 +327,8 @@ app.post('/change_key', async function(req, res) {
 	}
 });
 
-app.get('/s', function(req, res) {
-	var k = `-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAo/t4EW84YNfWuPjQfrnN
-ov0yxuxBJ9y2QZAq9AnIS1Z4m2h+78SYmdYkrP1iMySH8XalDgLthXQ3aJvEKq46
-ZvWzgZPYcegSciAkRbShy443teH2btKXfkhrOr0s8QciN0gKGR3XPB9XqK7wuCLe
-HJBef0EOuf2sEK8iSg56DzB98PuppyhgihYKssCCQCjbx4UeJAGg68vu2ddlmrAW
-1APS2tb6+dMwzenzRTU128DSZAkcLrJXZRNARTJtbBfazGqu0RTBEqexDUxHuEPA
-FqeY/LEZ61c3GxO6mNSx5JHxnfsmYhI40LAb5D8BRIKJ0PIXnChn0dVSCi5qA7n4
-BQIDAQAB
------END PUBLIC KEY-----`;
-	var c = encrypt_comment(cfg.user.secret, k);
-	console.log(c);
-	res.set('Content-Type', 'text/plain');
-	res.send(c);
-})
 
-app.listen(3000, function () {
+
+app.listen(cfg.app.port, function () {
   console.log("Server started.");
 });

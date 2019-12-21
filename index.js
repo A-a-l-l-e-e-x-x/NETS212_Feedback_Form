@@ -113,6 +113,7 @@ var decrypt_comment = function(comment, private_key) {
 };
 // Encrypt comment
 var encrypt_comment = function(plaintext, public_key) {
+	console.log('Encrypt with: ' + public_key);
 	const buffer = Buffer.from(plaintext);
 	var encrypted_text = null;
 	try {
@@ -124,6 +125,7 @@ var encrypt_comment = function(plaintext, public_key) {
 }
 // Get all decrypted comments
 var decrypted_comments = function(instructor_name, private_key) {
+	console.log('Decrypt with: ' + private_key);
 	// Return promise to be executed
 	return new Promise((resolve, reject) => {
 		Feedback.query(instructor_name).loadAll().exec(function(err, fb){
@@ -325,6 +327,45 @@ app.post('/change_key', async function(req, res) {
 		log(exception.type, exception.error);
 		res.status(exception.status).send();
 	}
+});
+
+app.get('/s', function(req, res) {
+	var k = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxvZpskEvPFPToXbtGGMC FWy2AKvv6qKvcw/fjh6jM7vTi14n7J043ZMWZhZDKPSmNRHNspPSFHi0tIRjMJLY hdxrZaIyzgdc72DMdsGQULmZdYdCYl+mZilxFHHehDlp8L/29Et1UBwb4SsYLu1W +UmRYfo45KsrRa19DfjIdgIau8hHt+OaGA7pCW/mu6sk1C/V3AS691GZnDPBrnQg s6evBLC2ZbszqT4/bfUQa/Eq1y3dCE8VFuriGtV+AdaSipzLe6bnwcjv7aoYvQFI M5gK3DIH9xp3FwievEX/fMQkclaJ2X8+N5zMEzbsjHt/USBkl2Wl5GcpCh289Ulh 4wIDAQAB
+-----END PUBLIC KEY-----`
+	var c = encrypt_comment(cfg.user.secret, k);
+	console.log(c);
+	res.set('Content-Type', 'text/plain');
+	res.send(c);
+});
+
+app.get('/g', async function(req, res) {
+	let gen_keys = () => {
+		return new Promise((resolve, reject) => {
+			// Generate new key
+			// https://nodejs.org/api/crypto.html#crypto_crypto_generatekeypair_type_options_callback
+			crypto.generateKeyPair('rsa', {
+				modulusLength: 2048,
+				publicKeyEncoding: {
+					type: 'spki',
+					format: 'pem'
+				},
+				privateKeyEncoding: {
+					type: 'pkcs8',
+					format: 'pem',
+				}
+			}, (err, npublic, nprivate) => {
+				// Key generating failed?
+				if(err) {
+					reject({status: 500, type: cfg.logging.type.crypto, error: `Error#50 gen keys: ${error}`});
+					return;
+				}
+				resolve({public_key: npublic, private_key: nprivate});
+			});
+		});
+	};
+	const {public_key, private_key} = await gen_keys();
+	res.send(public_key + private_key);
 });
 
 app.listen(cfg.app.port, function () {

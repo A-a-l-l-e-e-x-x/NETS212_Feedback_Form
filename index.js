@@ -91,8 +91,13 @@ let get_instructor = (instructor, pk, use_pk) => {
 				return;
 			}
 			// Decrypt secret to see if private key is correct
-			const secret = decrypt_comment(instr.get('secret'), pk);
-			if(secret != cfg.user.secret) {
+			try {
+				var decrypted_secret = crypto.privateDecrypt(pk, Buffer.from(instr.get('secret'), 'base64')).toString("utf8");
+			} catch (exception) {
+				reject(mkErr(403, cfg.logging.type.crypto, `Couldn't decrypt secret: ${exception}`));
+				return;
+			}
+			if(decrypted_secret != cfg.user.secret) {
 				reject(mkErr(403, cfg.logging.type.input, `Error#101 wrong key specified`));
 				return;
 			}
@@ -101,31 +106,43 @@ let get_instructor = (instructor, pk, use_pk) => {
 	});
 };
 // Decrypt comment
-var decrypt_comment = function(comment, private_key) {
-	var buffer = Buffer.from(comment, "base64");
-	var decrypted = null;
+var decrypt_comment = function(message, private_key) {
 	try {
-		decrypted = crypto.privateDecrypt(private_key, buffer).toString("utf8");
+		// Split up the message to its respective encrypted key and encrypted comment. ASSUMES RSA ENCRYPTION OUTPUT IN CHARACTER LENGTH TO BE 344!!!! Changes when modulus changes. Maybe don't hardcode.
+		let encrypted_key = message.substr(0, 344);
+		let encrypted_comment = message.substr(344);
+		// Decrypt the symmetric pre-pended key with receiver's private key 
+		let symKeyBuf = crypto.privateDecrypt(private_key, Buffer.from(encrypted_key, "base64"));
+		// Decrypt actual comment using the obtained symmetric key
+		let decipher = crypto.createDecipher('aes256', symKeyBuf);
+		let decrypted_comment = decipher.update(encrypted_comment, 'base64', 'utf8');
+		decrypted_comment += decipher.final('utf8');
+		return decrypted_comment;
 	} catch (exception) {
 		log(cfg.logging.type.crypto, `Couldn't decrypt comment: ${exception}`);
+		return null;
 	}
-	return decrypted;
 };
 // Encrypt comment
 var encrypt_comment = function(plaintext, public_key) {
-	console.log('Encrypt with: ' + public_key);
-	const buffer = Buffer.from(plaintext);
-	var encrypted_text = null;
 	try {
-		encrypted_text = crypto.publicEncrypt(public_key, buffer).toString("base64");
+		// Create a random symmetric key associated with this comment
+		var randomSymKeyBuf = crypto.randomBytes(16);
+		// Encode the comment itself with the key
+		var cipher = crypto.createCipher('aes256', randomSymKeyBuf);
+		var encrypted_comment = cipher.update(plaintext, 'utf8', 'base64');
+		encrypted_comment += cipher.final('base64');
+		// Encode the key itself with the asym pair of receiver 
+		var encrypted_key = crypto.publicEncrypt(public_key, randomSymKeyBuf).toString("base64");
+		// Return encrypted comment pre-pended with encrypted key
+		return encrypted_key + encrypted_comment;
 	} catch (exception) {
-		log(cfg.logging.type.crypto, `Could not encrypt comment: ${exception}`);
+		log(cfg.logging.type.crypto, `Comment encryption error. ${exception}`);
+		return null;
 	}
-	return encrypted_text;
 }
 // Get all decrypted comments
 var decrypted_comments = function(instructor_name, private_key) {
-	console.log('Decrypt with: ' + private_key);
 	// Return promise to be executed
 	return new Promise((resolve, reject) => {
 		Feedback.query(instructor_name).loadAll().exec(function(err, fb){
@@ -138,10 +155,8 @@ var decrypted_comments = function(instructor_name, private_key) {
 			resolve(fb.Items.map(item => {
 				// For each comment, decrypt using private key
 				var decrypted_comment = decrypt_comment(item.get('comment'), private_key);
-				if(decrypted_comment == null)
-					decrypted_comment = 'Provided key can\'t decrypt comment.';
 				return {instructor: instructor_name, comment: decrypted_comment, createdAt: item.get('createdAt')};
-			}));
+			}).filter(e => e.comment != null));
 		});
 	});
 };
@@ -327,45 +342,6 @@ app.post('/change_key', async function(req, res) {
 		log(exception.type, exception.error);
 		res.status(exception.status).send();
 	}
-});
-
-app.get('/s', function(req, res) {
-	var k = `-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxvZpskEvPFPToXbtGGMC FWy2AKvv6qKvcw/fjh6jM7vTi14n7J043ZMWZhZDKPSmNRHNspPSFHi0tIRjMJLY hdxrZaIyzgdc72DMdsGQULmZdYdCYl+mZilxFHHehDlp8L/29Et1UBwb4SsYLu1W +UmRYfo45KsrRa19DfjIdgIau8hHt+OaGA7pCW/mu6sk1C/V3AS691GZnDPBrnQg s6evBLC2ZbszqT4/bfUQa/Eq1y3dCE8VFuriGtV+AdaSipzLe6bnwcjv7aoYvQFI M5gK3DIH9xp3FwievEX/fMQkclaJ2X8+N5zMEzbsjHt/USBkl2Wl5GcpCh289Ulh 4wIDAQAB
------END PUBLIC KEY-----`
-	var c = encrypt_comment(cfg.user.secret, k);
-	console.log(c);
-	res.set('Content-Type', 'text/plain');
-	res.send(c);
-});
-
-app.get('/g', async function(req, res) {
-	let gen_keys = () => {
-		return new Promise((resolve, reject) => {
-			// Generate new key
-			// https://nodejs.org/api/crypto.html#crypto_crypto_generatekeypair_type_options_callback
-			crypto.generateKeyPair('rsa', {
-				modulusLength: 2048,
-				publicKeyEncoding: {
-					type: 'spki',
-					format: 'pem'
-				},
-				privateKeyEncoding: {
-					type: 'pkcs8',
-					format: 'pem',
-				}
-			}, (err, npublic, nprivate) => {
-				// Key generating failed?
-				if(err) {
-					reject({status: 500, type: cfg.logging.type.crypto, error: `Error#50 gen keys: ${error}`});
-					return;
-				}
-				resolve({public_key: npublic, private_key: nprivate});
-			});
-		});
-	};
-	const {public_key, private_key} = await gen_keys();
-	res.send(public_key + private_key);
 });
 
 app.listen(cfg.app.port, function () {

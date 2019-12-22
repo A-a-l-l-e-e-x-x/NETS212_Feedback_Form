@@ -1,7 +1,6 @@
 config/*
 node_modules/*
 package-lock.json
-<<<<<<< HEAD
 secretgen.txt
 keys.txt
 key*

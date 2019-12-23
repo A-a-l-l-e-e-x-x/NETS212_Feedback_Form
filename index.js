@@ -31,7 +31,7 @@ var Instructors = dynamo.define('Instructor', {
 	schema: {
 		name: Joi.string(),
 		public_key: Joi.string(),
-		secret: Joi.string() // Currently unused
+		secret: Joi.string()
 	}
 });
 // Feedback table: Instructor, createdAt, Comment

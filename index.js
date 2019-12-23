@@ -81,7 +81,7 @@ let get_instructor = (instructor, pk, use_pk) => {
 	return new Promise((resolve, reject) => {
 		Instructors.get(instructor, function(err, instr) {
 			// Reject if DB fail
-			if (err) {
+			if (err || instr == null) {
 				reject(mkErr(500, cfg.logging.type.dberr, `Error#6 querying instructors: ${err}`));
 				return;
 			}
